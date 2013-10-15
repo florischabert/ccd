@@ -1,5 +1,5 @@
 CFLAGS+=-O3 -Wall
-LDFLAGS+=-lusb
+LDFLAGS+=-lusb-1.0
 
 all: ccd
 

@@ -1,4 +1,4 @@
-# CC-Debugger Toolchain
+# CC-Debugger Driver
 
 ## CCD USB Specification
 
