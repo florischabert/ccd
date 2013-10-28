@@ -179,8 +179,11 @@ static int bulk_transfer(
 	ret = libusb_bulk_transfer(
 		ctx->ccd_device_handle, endpoint | bulk_endpoint,
 		(unsigned char *)data, size, &transferred, 0);
-	if (ret < 0 || transferred != size) {
+	if (ret < 0) {
 		error_out("Bulk transfer failed: %s\n", libusb_error_name(ret));
+	}
+	if (transferred != size) {
+		error_out("Transferred %dB instead of %dB\n", transferred, size);
 	}
 
 	if (size > 0) {
@@ -267,7 +270,7 @@ static int target_read_memory(
 	};
 
 	uint8_t mov_a_dptr[] = {
-		0x4e, 0x55,
+		0x4f, 0x55,
 		0xe0
 	};
 
@@ -276,8 +279,9 @@ static int target_read_memory(
 		0xa3
 	};
 
-	int err;
-	uint8_t *cmd;
+	int err = 1;
+	uint8_t *cmd = NULL;
+	uint8_t *cmd_cur;
 	int cmd_size = 0;
 
 	cmd_size += sizeof(header);
@@ -287,27 +291,42 @@ static int target_read_memory(
 	cmd_size += sizeof(footer);
 
 	cmd = malloc(cmd_size);
-
-	mov_dptr_addr16[3] = addr & 0xff;
-	mov_dptr_addr16[4] = addr >> 8;
-
-	memcpy(cmd, header, sizeof(header));
-	memcpy(cmd, mov_dptr_addr16, sizeof(mov_dptr_addr16));
-	for (int i = 0; i < size; i++) {
-		memcpy(cmd, mov_a_dptr, sizeof(mov_a_dptr));
-		memcpy(cmd, inc_dptr, sizeof(inc_dptr));
+	if (!cmd) {
+		error_out("Can't allocate memory\n");
 	}
-	memcpy(cmd, footer, sizeof(footer));
+	cmd_cur = cmd;
+
+	mov_dptr_addr16[4] = addr & 0xff;
+	mov_dptr_addr16[3] = addr >> 8;
+
+	memcpy(cmd_cur, header, sizeof(header));
+	cmd_cur += sizeof(header);
+
+	memcpy(cmd_cur, mov_dptr_addr16, sizeof(mov_dptr_addr16));
+	cmd_cur += sizeof(mov_dptr_addr16);
+
+	for (int i = 0; i < size; i++) {
+		memcpy(cmd_cur, mov_a_dptr, sizeof(mov_a_dptr));
+		cmd_cur += sizeof(mov_a_dptr);
+
+		memcpy(cmd_cur, inc_dptr, sizeof(inc_dptr));
+		cmd_cur += sizeof(inc_dptr);
+	}
+	memcpy(cmd_cur, footer, sizeof(footer));
+	cmd_cur += sizeof(footer);
 
 	err = bulk_transfer(ctx, USB_OUT, cmd, cmd_size);
 	noerr_or_out(err);
 	
-	free(cmd);
 
 	err = bulk_transfer(ctx, USB_IN, data, size);
 	noerr_or_out(err);
 
 out:
+	if (cmd) {
+		free(cmd);
+	}
+
 	return err;
 }
 
@@ -513,6 +532,10 @@ int ccd_erase_flash(ccd_ctx_t *ctx)
 
 	err = get_state(ctx, &state);
 	noerr_or_out(err);
+	if (state != 0) {
+		error_out("Bad state %d", state);
+	}
+
 	err = set_speed(ctx, 0);
 	noerr_or_out(err);
 	err = reset_debug(ctx);
@@ -525,9 +548,6 @@ int ccd_erase_flash(ccd_ctx_t *ctx)
 
 	err = target_write_config(ctx, CONFIG_TIMER_SUSPEND | CONFIG_SOFT_POWER_MODE);
 	noerr_or_out(err);
-
-	// target_read_memory(ctx, MEM_CHIP_VERSION, &byte);
-	// target_read_memory(ctx, MEM_CHIP_INFO, &halfw);
 
 	err = target_erase(ctx);
 	noerr_or_out(err);
@@ -549,7 +569,15 @@ out:
 
 int ccd_read_memory(ccd_ctx_t *ctx, uint16_t addr, void *data, int size)
 {
-	return target_read_memory(ctx, addr, data, size);
+	int err;
+
+	err = reset_debug(ctx);
+	noerr_or_out(err);
+
+	err = target_read_memory(ctx, addr, data, size);
+
+out:
+	return err;
 }
 
 int ccd_write_memory(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size, uint8_t *ret)
@@ -562,6 +590,7 @@ int ccd_write_memory(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size, 
 typedef struct {
 	int verbose;
 	int erase;
+	int info;
 } options_t;
 
 int parse_options(options_t *options, int argc, char * const *argv)
@@ -569,8 +598,7 @@ int parse_options(options_t *options, int argc, char * const *argv)
 	int err = 0;
 	int print_usage = 0;
 
-	options->verbose = 0;
-	options->erase = 0;
+	bzero(options, sizeof(options_t));
 
 	while (1)
 	{
@@ -579,11 +607,12 @@ int parse_options(options_t *options, int argc, char * const *argv)
 			{"help",    no_argument, 0, 'h'},
 			{"verbose", no_argument, 0, 'v'},
 			{"erase",   no_argument, 0, 'e'},
+			{"info",    no_argument, 0, 'i'},
 			{0, 0, 0, 0}
 		};
 
 		int option_index = 0;
-		int c = getopt_long (argc, argv, "vhe", long_options, &option_index);
+		int c = getopt_long (argc, argv, "vhei", long_options, &option_index);
 
 		if (c == -1) {
 			break;
@@ -596,6 +625,9 @@ int parse_options(options_t *options, int argc, char * const *argv)
 				break;
 			case 'e':
 				options->erase = 1;
+				break;
+			case 'i':
+				options->info = 1;
 				break;
 			case '?':
 				err = 1;
@@ -612,6 +644,7 @@ int parse_options(options_t *options, int argc, char * const *argv)
 		printf("  -h, --help   \tPrint this help\n");
 		printf("  -v, --verbose\tVerbose mode\n");
 		printf("  -e, --erase  \tErase flash\n");
+		printf("  -i, --info  \tErase flash\n");
 
 		err = 1;
 	}
@@ -655,6 +688,41 @@ int main(int argc, char * const *argv)
 	}
 
 	printf("Found CC%x target\n", ccd_info.chip);
+
+	if (options.info) {
+		uint8_t chip_version;
+		uint16_t chip_info;
+		int flash_size;
+		enum {
+			flash_size_mask = 0x70,
+			flash_size_32k  = 0x10,
+			flash_size_64k  = 0x20,
+			flash_size_128k = 0x30,
+			flash_size_256k = 0x40,
+		};
+
+		err = ccd_read_memory(
+			&ccd_ctx, MEM_CHIP_VERSION,
+			&chip_version, sizeof(chip_version));
+		noerr_or_out(err);
+
+		printf("Chip version %d\n", chip_version);
+
+		err = ccd_read_memory(
+			&ccd_ctx, MEM_CHIP_VERSION,
+			&chip_info, sizeof(chip_info));
+		noerr_or_out(err);
+
+		switch (chip_info & flash_size_mask) {
+			case flash_size_32k:  flash_size = 32;  break;
+			case flash_size_64k:  flash_size = 64;  break;
+			case flash_size_128k: flash_size = 128; break;
+			case flash_size_256k: flash_size = 256; break;
+			default: error_out("Invalid flash size\n");
+		}
+
+		printf("Flash size: %d KB\n", flash_size);
+	}
 
 	if (options.erase) {
 		err = ccd_erase_flash(&ccd_ctx);

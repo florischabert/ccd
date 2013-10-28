@@ -1,7 +1,7 @@
-# CC-Debugger Driver
+## CC-Debugger Driver
 
-## CCD USB Specification
+Work-in-progress support for CC2541 (SensorTag chip).
 
-## CCD Target Debug Specification
-http://www.ti.com/lit/an/swra410/swra410.pdf
-http://www.ti.com/lit/ug/swra124/swra124.pdf
+Features:
+- Erase target flash
+- Read, write target memory
