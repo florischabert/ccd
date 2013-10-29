@@ -308,7 +308,7 @@ static int target_read_memory(
 	};
 
 	uint8_t mov_a_dptr[] = {
-		0x4f, 0x55,
+		0x4e, 0x55,
 		0xe0
 	};
 
@@ -326,6 +326,8 @@ static int target_read_memory(
 	noerr_or_out(err);
 
 	for (int i = 0; i < size; i++) {
+		mov_a_dptr[0] |= (i == size-1) ? 0x1 : 0;
+
 		err = target_command_add(&cmd, &cmd_size, mov_a_dptr, sizeof(mov_a_dptr));
 		noerr_or_out(err);
 		err = target_command_add(&cmd, &cmd_size, inc_dptr, sizeof(inc_dptr));
@@ -598,7 +600,7 @@ int ccd_target_info(ccd_ctx_t *ctx, ccd_target_info_t *info)
 	noerr_or_out(err);
 
 	err = ccd_read_memory(
-		ctx, MEM_CHIP_VERSION,
+		ctx, MEM_CHIP_INFO,
 		&chip_info, sizeof(chip_info));
 	noerr_or_out(err);
 
