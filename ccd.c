@@ -657,6 +657,174 @@ out:
 
 #pragma mark App
 
+static int flash_hex(ccd_ctx_t *ctx, const char *file)
+{
+	int err = 1;
+	FILE *fp = NULL;
+	int line_number = 0;
+	char *line = NULL;
+	int end_of_file_record = 0;
+	uint8_t *data;
+
+	fp = fopen(file, "r");
+	if (!fp) {
+		error_out("Can't open %s\n", file);
+	}
+
+	printf(".");
+	fflush(stdout);
+
+	do {
+		size_t size;
+		int nchars;
+		char *curchar;
+		char *number;
+		char *endptr;
+		uint8_t bytecount;
+		uint16_t address_high = 0;
+		uint16_t address;
+		line = NULL;
+
+		line_number++;
+		nchars = getline(&line, &size, fp);
+		if (nchars < 0) {
+			break;
+		}
+
+		do {
+			char c = line[nchars-1];
+			if (c == '\r' || c == '\n') {
+				line[nchars-1] = '\0';
+				nchars--;
+			}
+			else {
+				break;
+			}
+		} while (nchars > 0);
+
+		curchar = line;
+
+		if (end_of_file_record) {
+			error_out("Found End Of Line Record before the end of the file\n");
+		}
+
+		// HEX format:
+		// :CCAAAATTD....DSS
+		// CC    -> Byte count
+		// AAAA  -> Address
+		// TT    -> Record type
+		// D...D -> Data
+		// SS    -> Checksum
+
+		if (strlen(line) < 11) {
+			error_out("Line %d is too short\n", line_number);
+		}
+		if (*curchar != ':') {
+			error_out("No start code on line %d\n", line_number);
+		}
+		curchar++;
+
+		// Byte count
+		number = strndup(curchar, 2);
+		if (!number) {
+			error_out("Out of memory\n");
+		}
+		bytecount = strtol(number, &endptr, 16);
+		free(number);
+		if (bytecount * 2 + 11 != strlen(line)) {
+			error_out("Wrong byte count on line %d\n", line_number);
+		}
+		curchar += 2;
+
+		// Address
+		number = strndup(curchar, 4);
+		if (!number) {
+			error_out("Out of memory\n");
+		}
+		address = strtol(number, &endptr, 16);
+		free(number);
+		curchar += 4;
+
+		// Record type
+		if (*curchar != '0') {
+			error_out("Unknown record type on line %d\n", line_number);
+		}
+		curchar++;
+
+		switch (*curchar++) {
+			case '0':
+				if (line_number % 100 == 0) {
+					printf(".");
+					fflush(stdout);
+				}
+
+				data = malloc(bytecount);
+				for (int i = 0; i < bytecount; i++) {
+					uint8_t byte;
+
+					number = strndup(curchar, 2);
+					if (!number) {
+						error_out("Out of memory\n");
+					}
+					byte = strtol(number, &endptr, 16);
+					free(number);
+					curchar += 2;
+
+					data[i] = byte;
+				}
+
+				if (address_high == 0) {
+					ccd_write_memory(ctx, address, data, bytecount);
+				}
+				else {
+
+				}
+
+				free(data);
+				break;
+			case '1':
+				end_of_file_record = 1;
+				if (bytecount != 0) {
+					error_out("Bad End Of File record\n");
+				}
+				break;
+			case '4':
+				if (bytecount != 2) {
+					error_out("Bad End Of File record\n");
+				}
+				number = strndup(curchar, 4);
+				if (!number) {
+					error_out("Out of memory\n");
+				}
+				address_high = strtol(number, &endptr, 16);
+				free(number);
+				break;
+			case '2':
+			case '3':
+			case '5':
+				error_out("Record type not supported\n");
+				break;
+			default:
+				error_out("Unknown record type on line %d\n", line_number);
+		}
+
+		free(line);
+	} while (1);
+
+	printf(" done\n");
+
+	err = 0;
+out:
+	if (line) {
+		free(line);
+	}
+	if (fp) {
+		fclose(fp);
+	}
+
+	return err;
+}
+
 static int repl_loop(ccd_ctx_t *ctx)
 {
 	int err = 1;
@@ -771,6 +939,7 @@ typedef struct {
 	int erase;
 	int info;
 	int repl;
+	char *hex_file;
 } options_t;
 
 static int parse_options(options_t *options, int argc, char * const *argv)
@@ -784,6 +953,7 @@ static int parse_options(options_t *options, int argc, char * const *argv)
 		{"erase",   no_argument,       0, 'e'},
 		{"info",    no_argument,       0, 'i'},
 		{"repl",    no_argument,       0, 'r'},
+		{"hex",     required_argument, 0, 'x'},
 		{0, 0, 0, 0}
 	};
 
@@ -791,7 +961,7 @@ static int parse_options(options_t *options, int argc, char * const *argv)
 
 	while (1) {
 		int option_index = 0;
-		int c = getopt_long(argc, argv, "vheir", long_options, &option_index);
+		int c = getopt_long(argc, argv, "vheirx:", long_options, &option_index);
 
 		if (c == -1) {
 			break;
@@ -811,6 +981,9 @@ static int parse_options(options_t *options, int argc, char * const *argv)
 			case 'r':
 				options->repl = 1;
 				break;
+			case 'x':
+				options->hex_file = optarg;
+				break;
 			case '?':
 				err = 1;
 				break;
@@ -823,11 +996,11 @@ static int parse_options(options_t *options, int argc, char * const *argv)
 	if (print_usage) {
 		printf("Usage: %s [options]\n", argv[0]);
 		printf("Options:\n");
-		printf("  -h, --help    \tPrint this help\n");
-		printf("  -v, --verbose \tVerbose mode\n");
-		printf("  -e, --erase   \tErase flash\n");
-		printf("  -i, --info    \tGet target info\n");
-		printf("  -r, --repl    \tLaunch REPL\n");
+		printf("  -h, --help           \tPrint this help\n");
+		printf("  -v, --verbose        \tVerbose mode\n");
+		printf("  -i, --info           \tGet target info\n");
+		printf("  -r, --repl           \tLaunch REPL\n");
+		printf("  -x, --hex <filename> \tWrite HEX file to flash\n");
 
 		err = 1;
 	}
@@ -883,8 +1056,8 @@ int main(int argc, char * const *argv)
 		printf("SRAM size: %d KB\n", target_info.sram_size);
 	}
 
-	if (options.erase) {
-		err = ccd_erase_flash(&ctx);
+	if (options.hex_file) {
+		err = flash_hex(&ctx, options.hex_file);
 		noerr_or_out(err);
 	}
 
