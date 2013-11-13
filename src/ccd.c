@@ -643,12 +643,7 @@ int ccd_write_memory(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
 {
 	int err;
 
-	err = reset_debug(ctx);
-	noerr_or_out(err);
-
 	err = target_write_memory(ctx, addr, data, size);
-
-	err = reset(ctx);
 	noerr_or_out(err);
 
 out:
@@ -670,9 +665,6 @@ static int flash_hex(ccd_ctx_t *ctx, const char *file)
 	if (!fp) {
 		error_out("Can't open %s\n", file);
 	}
-
-	printf(".");
-	fflush(stdout);
 
 	do {
 		size_t size;
@@ -753,11 +745,6 @@ static int flash_hex(ccd_ctx_t *ctx, const char *file)
 
 		switch (*curchar++) {
 			case '0':
-				if (line_number % 100 == 0) {
-					printf(".");
-					fflush(stdout);
-				}
-
 				data = malloc(bytecount);
 				for (int i = 0; i < bytecount; i++) {
 					uint8_t byte;
@@ -801,17 +788,19 @@ static int flash_hex(ccd_ctx_t *ctx, const char *file)
 				break;
 			case '2':
 			case '3':
-			case '5':
 				error_out("Record type not supported\n");
+				break;
+			case '5':
+				printf("Ignoring Start Linear Address Record\n");
 				break;
 			default:
 				error_out("Unknown record type on line %d\n", line_number);
 		}
 
+		// TODO: checksum
+
 		free(line);
 	} while (1);
-
-	printf(" done\n");
 
 	err = 0;
 out:
@@ -1000,6 +989,7 @@ static int parse_options(options_t *options, int argc, char * const *argv)
 		printf("  -v, --verbose        \tVerbose mode\n");
 		printf("  -i, --info           \tGet target info\n");
 		printf("  -r, --repl           \tLaunch REPL\n");
+		printf("  -e, --erase          \trase flash\n");
 		printf("  -x, --hex <filename> \tWrite HEX file to flash\n");
 
 		err = 1;
@@ -1056,8 +1046,16 @@ int main(int argc, char * const *argv)
 		printf("SRAM size: %d KB\n", target_info.sram_size);
 	}
 
+	if (options.erase) {
+		err = ccd_erase_flash(&ctx);
+		noerr_or_out(err);
+	}
+
 	if (options.hex_file) {
 		err = flash_hex(&ctx, options.hex_file);
+		noerr_or_out(err);
+
+		err = reset(&ctx);
 		noerr_or_out(err);
 	}
 

@@ -4,4 +4,6 @@ Work-in-progress support for CC2541 (SensorTag chip).
 
 Features:
 - Erase target flash
-- Read, write target memory
+- Write HEX file to flash
+- Verify memory
+
