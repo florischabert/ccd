@@ -1,7 +1,9 @@
 SRC=$(wildcard src/*.c)
+OBJ=$(SRC:.c=.o)
+DEP=$(SRC:.c=.deps)
 BIN=ccd
 
-CFLAGS+=-O3 -Wall -Wextra
+CFLAGS+=-Wall -Wextra -O3
 LDFLAGS+=-lusb-1.0
 
 %.o: %.c
@@ -12,10 +14,10 @@ $(BIN): $(SRC:.c=.o)
 	@echo LD $@
 	@$(CC) $(LDFLAGS) -o $@ $^
 
--include $(SRC:.c=.deps)
+-include $(DEP)
 	
 clean:
-	@$(RM) $(BIN) $(SRC:.c=.o) $(SRC:.c=.deps)
+	@$(RM) $(BIN) $(DEP) $(OBJ)
 
 .PHONY: clean
 
