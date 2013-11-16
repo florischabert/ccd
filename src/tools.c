@@ -18,3 +18,16 @@ void log_print(const char *format, ...)
 
 	va_end(args);
 }
+
+void log_bytes(const uint8_t *data, int size)
+{
+	for (int i = 0; i < size; i ++) {
+		 log_print("%02x ", data[i]);
+		if ((i+1) % 16 == 0) {
+			 log_print("\n");
+		}
+	}
+	if (size > 0) {
+		 log_print("\n");
+	}
+}

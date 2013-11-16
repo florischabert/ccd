@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 typedef enum {
 	err_none   = 0,
@@ -25,5 +27,6 @@ typedef enum {
 
 void log_set(int enable_log);
 void log_print(const char *format, ...);
+void log_bytes(const uint8_t *data, int size);
 
 #endif

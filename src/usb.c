@@ -10,19 +10,6 @@ struct usb_ctx_t {
 	libusb_device_handle *device_handle;
 };
 
-static void log_bytes(uint8_t *data, int size)
-{
-	for (int i = 0; i < size; i ++) {
-		 log_print("%02x ", data[i]);
-		if ((i+1) % 16 == 0) {
-			 log_print("\n");
-		}
-	}
-	if (size > 0) {
-		 log_print("\n");
-	}
-}
-
 usb_ctx_t *usb_open_device(int vendor_id, int product_id)
 {
 	usb_ctx_t *ctx = NULL;

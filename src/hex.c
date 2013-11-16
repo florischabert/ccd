@@ -113,7 +113,8 @@ err_t hex_flash(ccd_ctx_t *ctx, const char *file)
 				}
 
 				if (address_high == 0) {
-					ccd_write_memory(ctx, address, data, bytecount);
+					err = ccd_write_code(ctx, address, data, bytecount);
+					noerr_or_out(err);
 				}
 				else {
 

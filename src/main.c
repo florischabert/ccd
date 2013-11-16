@@ -12,6 +12,7 @@ typedef struct {
 	int info;
 	int erase;
 	int verify;
+	int slow;
 	char *hex_file;
 } options_t;
 
@@ -27,6 +28,7 @@ static err_t parse_options(options_t *options, int argc, char * const *argv)
 		{"erase",   no_argument,       0, 'e'},
 		{"verify",  no_argument,       0, 'v'},
 		{"hex",     required_argument, 0, 'x'},
+		{"slow",    required_argument, 0, 's'},
 		{0, 0, 0, 0}
 	};
 
@@ -34,7 +36,7 @@ static err_t parse_options(options_t *options, int argc, char * const *argv)
 
 	while (1) {
 		int option_index = 0;
-		int c = getopt_long(argc, argv, "hViex:v", long_options, &option_index);
+		int c = getopt_long(argc, argv, "hViex:vs", long_options, &option_index);
 
 		if (c == -1) {
 			break;
@@ -57,6 +59,9 @@ static err_t parse_options(options_t *options, int argc, char * const *argv)
 			case 'x':
 				options->hex_file = optarg;
 				break;
+			case 's':
+				options->slow = 1;
+				break;
 			case '?':
 				err = 1;
 				break;
@@ -72,10 +77,16 @@ static err_t parse_options(options_t *options, int argc, char * const *argv)
 		printf("  -h, --help           \tPrint this help\n");
 		printf("      --verbose        \tVerbose mode\n");
 		printf("  -i, --info           \tPrint target info\n");
-		printf("  -e, --erase          \tErase flash before writing\n");
+		printf("  -e, --erase          \tErase flash\n");
 		printf("  -x, --hex <filename> \tWrite HEX file to flash\n");
 		printf("  -v, --verify         \tVerify after write\n");
+		printf("  -s, --slow           \tSlow mode\n");
 
+		err = err_failed;
+	}
+
+	if (options->verify && !options->hex_file) {
+		printf("Can't verify: no file was given\n");
 		err = err_failed;
 	}
 
@@ -114,6 +125,9 @@ int main(int argc, char * const *argv)
 
 	printf("Target: CC%x\n", fw_info.chip);
 
+	err = ccd_enter_debug(ctx, options.slow);
+	noerr_or_out(err);
+
 	if (options.info) {
 		ccd_target_info_t target_info;
 		err = ccd_target_info(ctx, &target_info);
@@ -126,22 +140,22 @@ int main(int argc, char * const *argv)
 	}
 
 	if (options.erase) {
-		err = ccd_erase_flash(ctx);
+		err = ccd_erase(ctx);
 		noerr_or_out(err);
 	}
 
 	if (options.hex_file) {
 		err = hex_flash(ctx, options.hex_file);
 		noerr_or_out(err);
-
-		err = ccd_reset(ctx);
-		noerr_or_out(err);
 	}
 
 	if (options.verify) {
+		// err = hex_flash(ctx, options.hex_file);
+		// noerr_or_out(err);
 	}
 
-	err = err_none;
+	err = ccd_leave_debug(ctx);
+	noerr_or_out(err);
 
 out:
 	ccd_close(ctx);

@@ -1,8 +1,6 @@
 #ifndef CCD_H
 #define CCD_H
 
-#include <stdlib.h>
-
 #include "usb.h"
 #include "tools.h"
 
@@ -27,11 +25,17 @@ typedef struct {
 	int sram_size;
 } ccd_target_info_t;
 
+err_t ccd_enter_debug(ccd_ctx_t *ctx, int slow_mode);
+err_t ccd_leave_debug(ccd_ctx_t *ctx);
+
 err_t ccd_fw_info(ccd_ctx_t *ctx, ccd_fw_info_t *info);
 err_t ccd_target_info(ccd_ctx_t *ctx, ccd_target_info_t *info);
 err_t ccd_reset(ccd_ctx_t *ctx);
-err_t ccd_erase_flash(ccd_ctx_t *ctx);
-err_t ccd_read_memory(ccd_ctx_t *ctx, uint16_t addr, void *data, int size);
-err_t ccd_write_memory(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size);
+err_t ccd_erase(ccd_ctx_t *ctx);
+
+err_t ccd_read_xdata(ccd_ctx_t *ctx, uint16_t addr, void *data, int size);
+err_t ccd_write_xdata(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size);
+err_t ccd_read_code(ccd_ctx_t *ctx, uint16_t addr, void *data, int size);
+err_t ccd_write_code(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size);
 
 #endif

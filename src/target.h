@@ -8,6 +8,48 @@ enum {
 	MEM_CHIP_VERSION = 0x6249,
 	MEM_CHIP_ID      = 0x624a,
 	MEM_CHIP_INFO    = 0x6276,
+	
+	FLASH_CONTROL    = 0x6270,
+	FLASH_ADDR_LOW   = 0x6271,
+	FLASH_ADDR_HIGH  = 0x6272,
+	FLASH_WRITE_DATA = 0x6273,
+
+	// SFR
+	DMA14_ADDR_LOW   = 0x70d2,
+	DMA14_ADDR_HIGH  = 0x70d3,
+	DMA0_ADDR_LOW    = 0x70d4,
+	DMA0_ADDR_HIGH   = 0x70d5,
+	DMA_ARM          = 0x70d6,
+};
+
+enum {
+	FLASH_BUSY  = 0x80,
+	FLASH_FULL  = 0x40,
+	FLASH_ABORT = 0x20,
+	FLASH_CACHE = 0x0c,
+	FLASH_WRITE = 0x02,
+	FLASH_ERASE = 0x01,
+};
+
+enum {
+	DMA_WORDSIZE_16B  = 0x80,
+	DMA_TMODE_RBLOCK  = 0x60,
+	DMA_TMODE_RSINGLE = 0x40,
+	DMA_TMODE_BLOCK   = 0x20,
+	DMA_TMODE_SINGLE  = 0x00,
+	DMA_TRIG_FLASH    = 18,
+
+	DMA_SRC_INC_M1    = 0xc0,
+	DMA_SRC_INC_2     = 0x80,
+	DMA_SRC_INC_1     = 0x40,
+	DMA_DEST_INC_M1   = 0x30,
+	DMA_DEST_INC_2    = 0x20,
+	DMA_DEST_INC_1    = 0x10,
+	DMA_IRQMASK_EN    = 0x08,
+	DMA_M8_7LSB       = 0x04,
+	DMA_PRIO_HIGH     = 0x02,
+	DMA_PRIO_ASSURED  = 0x01,
+	DMA_PRIO_LOW      = 0x00,
 };
 
 enum {
@@ -59,9 +101,9 @@ err_t target_command_add(void **cmd, int *size, void *data, int data_size);
 err_t target_command_init(void **cmd, int *size);
 err_t target_command_finalize(void **cmd, int *size);
 
-err_t target_read_memory(
-	ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size);
-err_t target_write_memory(
-	ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
+err_t target_read_xdata(ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size);
+err_t target_write_xdata(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
+err_t target_read_flash(ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size);
+err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
 
 #endif

@@ -24,7 +24,7 @@ static err_t reset(ccd_ctx_t *ctx, int debug_mode)
 
 static err_t debug_enter(ccd_ctx_t *ctx)
 {
-	log_print("[CCD] Enter debug mode\n");
+	log_print("[CCD] Enter target debug\n");
 	return usb_control_transfer(ctx->usb, USB_OUT, VENDOR_DEBUG, 0, 0, NULL, 0);
 }
 
@@ -60,25 +60,14 @@ void ccd_close(ccd_ctx_t *ctx)
 	}
 }
 
-err_t ccd_reset(ccd_ctx_t *ctx)
+err_t ccd_enter_debug(ccd_ctx_t *ctx, int slow_mode)
 {
-	return reset(ctx, 0);
-}
-
-err_t ccd_fw_info(ccd_ctx_t *ctx, ccd_fw_info_t *info)
-{
-	log_print("[CCD] Get firmware info\n");
-	return usb_control_transfer(ctx->usb, USB_IN, VENDOR_GET_INFO, 0, 0, info, sizeof(*info));
-}
-
-err_t ccd_erase_flash(ccd_ctx_t *ctx)
-{
-	err_t err = err_failed;
+	err_t err;
 	uint8_t state;
 	uint8_t config;
 	uint8_t cc_status;
 
-	log_print("[CCD] Erase flash\n");
+	log_print("[CCD] Enter debug mode\n");
 
 	err = get_state(ctx, &state);
 	noerr_or_out(err);
@@ -86,7 +75,7 @@ err_t ccd_erase_flash(ccd_ctx_t *ctx)
 		error_out("Bad state %d", state);
 	}
 
-	err = set_speed(ctx, 0);
+	err = set_speed(ctx, slow_mode ? 0 : 1);
 	noerr_or_out(err);
 	err = reset(ctx, 1);
 	noerr_or_out(err);
@@ -99,19 +88,56 @@ err_t ccd_erase_flash(ccd_ctx_t *ctx)
 	err = target_write_config(ctx, CONFIG_TIMER_SUSPEND | CONFIG_SOFT_POWER_MODE);
 	noerr_or_out(err);
 
-	err = target_erase(ctx);
+	err = target_read_status(ctx, &cc_status);
 	noerr_or_out(err);
 
-	do {
-		usleep(200);
-		err = target_read_status(ctx, &cc_status);
-		noerr_or_out(err);
-	} while (cc_status & STATUS_ERASE_BUSY);
+	if (cc_status & STATUS_DEBUG_LOCKED) {
+		error_out("Target is locked\n");
+	}
+
+out:
+	return err;
+}
+
+err_t ccd_leave_debug(ccd_ctx_t *ctx)
+{
+	int err;
+
+	log_print("[CCD] Leave debug mode\n");
 
 	err = reset(ctx, 0);
 	noerr_or_out(err);
 
-	err = err_none;
+out:
+	return err;
+}
+
+err_t ccd_reset(ccd_ctx_t *ctx)
+{
+	return reset(ctx, 0);
+}
+
+err_t ccd_fw_info(ccd_ctx_t *ctx, ccd_fw_info_t *info)
+{
+	log_print("[CCD] Get firmware info\n");
+	return usb_control_transfer(ctx->usb, USB_IN, VENDOR_GET_INFO, 0, 0, info, sizeof(*info));
+}
+
+err_t ccd_erase(ccd_ctx_t *ctx)
+{
+	err_t err = err_failed;
+	uint8_t cc_status;
+
+	log_print("[CCD] Erase flash\n");
+
+	err = target_erase(ctx);
+	noerr_or_out(err);
+
+	do {
+		usleep(500);
+		err = target_read_status(ctx, &cc_status);
+		noerr_or_out(err);
+	} while (cc_status & STATUS_ERASE_BUSY);
 
 out:
 	return err;
@@ -129,39 +155,22 @@ err_t ccd_target_info(ccd_ctx_t *ctx, ccd_target_info_t *info)
 		sram_size_mask   = 0x0700,
 		sram_size_shift  = 8,
 	};
-	uint8_t status;
 
 	log_print("[CCD] Get target info\n");
 
-	err = set_speed(ctx, 0);
-	noerr_or_out(err);
-	err = debug_enter(ctx);
-	noerr_or_out(err);
-	err = reset(ctx, 1);
-	noerr_or_out(err);
-
-	err = target_read_status(ctx, &status);
-	noerr_or_out(err);
-
-	err = target_write_config(ctx, CONFIG_TIMER_SUSPEND | CONFIG_SOFT_POWER_MODE);
-	noerr_or_out(err);
-
-	err = ccd_read_memory(
+	err = ccd_read_xdata(
 		ctx, MEM_CHIP_ID,
 		&chip_id, sizeof(chip_id));
 	noerr_or_out(err);
 
-	err = ccd_read_memory(
+	err = ccd_read_xdata(
 		ctx, MEM_CHIP_VERSION,
 		&chip_version, sizeof(chip_version));
 	noerr_or_out(err);
 
-	err = ccd_read_memory(
+	err = ccd_read_xdata(
 		ctx, MEM_CHIP_INFO,
 		&chip_info, sizeof(chip_info));
-	noerr_or_out(err);
-
-	err = reset(ctx, 0);
 	noerr_or_out(err);
 
 	info->chip_id = chip_id;
@@ -175,26 +184,52 @@ out:
 	return err;
 }
 
-err_t ccd_read_memory(ccd_ctx_t *ctx, uint16_t addr, void *data, int size)
+err_t ccd_read_xdata(ccd_ctx_t *ctx, uint16_t addr, void *data, int size)
 {
 	err_t err = err_failed;
 
-	log_print("[CCD] Read %dB at 0x%04x\n", size, addr);
+	log_print("[CCD] Read %dB at 0x%04x in data memory\n", size, addr);
 
-	err = target_read_memory(ctx, addr, data, size);
+	err = target_read_xdata(ctx, addr, data, size);
 	noerr_or_out(err);
 
 out:
 	return err;
 }
 
-err_t ccd_write_memory(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
+err_t ccd_write_xdata(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
 {
 	err_t err = err_failed;
 
-	log_print("[CCD] Write %dB at 0x%04x\n", size, addr);
+	log_print("[CCD] Write %dB at 0x%04x in data memory\n", size, addr);
 
-	err = target_write_memory(ctx, addr, data, size);
+	err = target_write_xdata(ctx, addr, data, size);
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+err_t ccd_read_code(ccd_ctx_t *ctx, uint16_t addr, void *data, int size)
+{
+	err_t err = err_failed;
+
+	log_print("[CCD] Read %dB at 0x%04x in code memory\n", size, addr);
+
+	err = target_read_flash(ctx, addr, data, size);
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+err_t ccd_write_code(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
+{
+	err_t err = err_failed;
+
+	log_print("[CCD] Write %dB at 0x%04x in code memory\n", size, addr);
+
+	err = target_write_flash(ctx, addr, data, size);
 	noerr_or_out(err);
 
 out:
