@@ -121,7 +121,7 @@ err_t usb_control_transfer(
 		ctx->device_handle,
 		((endpoint == USB_IN) ? LIBUSB_ENDPOINT_IN : LIBUSB_ENDPOINT_OUT) | LIBUSB_REQUEST_TYPE_VENDOR,
 		request,
-		value, index, (unsigned char *)data, size, 0);
+		value, index, (unsigned char *)data, size, 1000);
 	if (ret < 0 || ret != size) {
 		error_out("Control transfer failed: %s\n", libusb_error_name(ret));
 	}
@@ -150,7 +150,7 @@ err_t usb_bulk_transfer(
 	ret = libusb_bulk_transfer(
 		ctx->device_handle,
 		((endpoint == USB_IN) ? LIBUSB_ENDPOINT_IN : LIBUSB_ENDPOINT_OUT) | bulk_endpoint,
-		(unsigned char *)data, size, &transferred, 0);
+		(unsigned char *)data, size, &transferred, 1000);
 	if (ret < 0) {
 		error_out("Bulk transfer failed: %s\n", libusb_error_name(ret));
 	}

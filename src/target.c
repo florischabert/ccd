@@ -268,10 +268,14 @@ out:
 static err_t dma_arm(ccd_ctx_t *ctx, int channel)
 {
 	err_t err;
-	uint8_t val = 1 < channel;
+	uint8_t val;
 
 	log_print("[Target] Arm dma channel %d\n", channel);
 
+	err = target_read_xdata(ctx, DMA_ARM, &val, sizeof(val));
+	noerr_or_out(err);
+
+	val |= 1 < channel;
 	err = target_write_xdata(ctx, DMA_ARM, &val, sizeof(val));
 	noerr_or_out(err);
 

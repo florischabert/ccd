@@ -140,18 +140,21 @@ int main(int argc, char * const *argv)
 	}
 
 	if (options.erase) {
+		printf("Erasing flash.\n");
+
 		err = ccd_erase(ctx);
 		noerr_or_out(err);
 	}
 
 	if (options.hex_file) {
+		printf("Writing HEX to flash.\n");
+
 		err = hex_flash(ctx, options.hex_file);
 		noerr_or_out(err);
 	}
 
 	if (options.verify) {
-		// err = hex_flash(ctx, options.hex_file);
-		// noerr_or_out(err);
+		printf("Verifying flash not implemented.\n");
 	}
 
 	err = ccd_leave_debug(ctx);
