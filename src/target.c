@@ -227,37 +227,75 @@ out:
 	return err;
 }
 
-static err_t dma_setup(ccd_ctx_t *ctx, uint16_t addr, int size, int channel)
+typedef struct {
+	int is_dma0;
+	uint8_t configs[4][8];
+} dma_config_t;
+
+static void dma_config_init(ccd_ctx_t *ctx, dma_config_t *config)
 {
-	err_t err;
+	(void)ctx;
+	config->is_dma0 = -1;
+}
+
+static err_t dma_config_channel(
+	ccd_ctx_t *ctx, dma_config_t *config, int channel,
+	uint16_t srcaddr, int incsrc, uint16_t dstaddr, int incdst,
+	int size, int dma_trigger)
+{
+	err_t err = err_failed;
+	(void)ctx;
+
+	if (config->is_dma0 != -1) {
+		if ((channel == 0 && !config->is_dma0) ||
+		    (channel != 0 && config->is_dma0)) {
+			error_out("Can't use DMA0 and DMA1-4 with the same config\n");
+		}
+	}
+
+	config->is_dma0 = channel == 0;
+
+	if (channel != 0) {
+		channel--;
+	}
+
+	config->configs[channel][0] = srcaddr >> 8;
+	config->configs[channel][1] = srcaddr & 0xff;
+	config->configs[channel][2] = dstaddr >> 8;
+	config->configs[channel][3] = dstaddr & 0xff;
+	config->configs[channel][4] = size >> 8;
+	config->configs[channel][5] = size & 0xff;
+	config->configs[channel][6] = DMA_TMODE_SINGLE | dma_trigger;
+	config->configs[channel][7] = DMA_PRIO_HIGH;
+	config->configs[channel][7] |= incsrc ? DMA_SRC_INC_1 : 0;
+	config->configs[channel][7] |= incdst ? DMA_DST_INC_1 : 0;
+
+	err = err_none;
+
+out:
+	return err;	
+}
+
+static err_t dma_config_commit(
+	ccd_ctx_t *ctx, dma_config_t *config, uint16_t temp_addr, int size)
+{
+	err_t err = err_failed;
 	uint8_t val;
-	int dma_addr_low;
-	int dma_addr_high;
-	uint16_t dma_config_addr = 0x0400;
-	uint8_t dma_config[8];
+	int dma_addr_low = config->is_dma0 ? DMA0_ADDR_LOW : DMA14_ADDR_LOW;
+	int dma_addr_high = config->is_dma0 ? DMA0_ADDR_HIGH : DMA14_ADDR_HIGH;
 
-	log_print("[Target] Setup dma channel %d\n", channel);
+	if (config->is_dma0 == -1) {
+		error_out("Can't commit before DMA config is done\n");
+	}
 
-	dma_config[0] = addr >> 4;
-	dma_config[1] = addr & 0xff;
-	dma_config[2] = (FLASH_WRITE_DATA >> 4) & 0xff;
-	dma_config[3] = (FLASH_WRITE_DATA >> 4) & 0xff;
-	dma_config[4] = size >> 4;
-	dma_config[5] = size & 0xff;
-	dma_config[6] = DMA_TMODE_SINGLE | DMA_TRIG_FLASH;
-	dma_config[7] = DMA_SRC_INC_1 | DMA_IRQMASK_EN | DMA_PRIO_HIGH;
-
-	err = target_write_xdata(ctx, dma_config_addr, dma_config, sizeof(dma_config));
+	err = target_write_xdata(ctx, temp_addr, (uint8_t *)config->configs, size);
 	noerr_or_out(err);
 
-	dma_addr_low = channel == 0 ? DMA0_ADDR_LOW : DMA14_ADDR_LOW;
-	dma_addr_high = channel == 0 ? DMA0_ADDR_HIGH : DMA14_ADDR_HIGH;
-
-	val = dma_config_addr & 0xff;
+	val = temp_addr & 0xff;
 	err = target_write_xdata(ctx, dma_addr_low, &val, sizeof(val));
 	noerr_or_out(err);
 
-	val = dma_config_addr >> 4;
+	val = temp_addr >> 8;
 	err = target_write_xdata(ctx, dma_addr_high, &val, sizeof(val));
 	noerr_or_out(err);
 
@@ -272,10 +310,7 @@ static err_t dma_arm(ccd_ctx_t *ctx, int channel)
 
 	log_print("[Target] Arm dma channel %d\n", channel);
 
-	err = target_read_xdata(ctx, DMA_ARM, &val, sizeof(val));
-	noerr_or_out(err);
-
-	val |= 1 < channel;
+	val = 1 << channel;
 	err = target_write_xdata(ctx, DMA_ARM, &val, sizeof(val));
 	noerr_or_out(err);
 
@@ -294,7 +329,7 @@ static err_t flash_setup(ccd_ctx_t *ctx, uint16_t addr)
 	err = target_write_xdata(ctx, FLASH_ADDR_LOW, &val, sizeof(val));
 	noerr_or_out(err);
 
-	val = addr >> 4;
+	val = addr >> 8;
 	err = target_write_xdata(ctx, FLASH_ADDR_HIGH, &val, sizeof(val));
 	noerr_or_out(err);
 
@@ -338,31 +373,94 @@ out:
 	return err;
 }
 
-err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size)
+static err_t burst_write(ccd_ctx_t *ctx, const uint8_t *data, int size)
 {
 	err_t err;
-	uint16_t temp_data_addr = 0x0000;
+	uint8_t cmd[3] = { TARGET_BURST_HDR, TARGET_BURST_WRITE, 0x00 };
 
-	log_print("[Target] Write %dB to flash at 0x%04x\n", addr);
+	cmd[1] |= size >> 8;
+	cmd[2] = size & 0xff;
+
+	log_print("[Target] Burst write %dB\n", size);
+
+	err = usb_bulk_transfer(ctx->usb, USB_OUT, cmd, 3);
+	noerr_or_out(err);
+
+	err = usb_bulk_transfer(ctx->usb, USB_OUT, (void *)data, size);
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size)
+{
+	err_t err = err_failed;
+	const int block_size = 1024;
+	const uint16_t temp_config_addr = 0x0800;
+	const uint16_t temp_data_addr = 0x0000;
+	static dma_config_t dma_config;
+
+	log_print("[Target] Write %dB to flash at 0x%04x\n", size, addr);
 	log_bytes(data, size);
 
-	err = target_write_xdata(ctx, temp_data_addr, data, size);
-	noerr_or_out(err);
+	dma_config_init(ctx, &dma_config);
 
-	err = dma_setup(ctx, temp_data_addr, size, 1);
-	noerr_or_out(err);
+	if (size % 4) {
+		error_out("Flash writing requires blocks of 4 bytes\n");
+	}
 
-	err = flash_setup(ctx, addr);
-	noerr_or_out(err);
+	while (size) {
+		int current_size = size;
 
-	err = dma_arm(ctx, 1);
-	noerr_or_out(err);
+		if (size > block_size) {
+			current_size = block_size;
+		}
 
-	err = flash_set_flag(ctx, FLASH_WRITE);
-	noerr_or_out(err);
+		// DMA from usb burst write to temp address
+		err = dma_config_channel(
+			ctx, &dma_config, 1,
+			DEBUG_WRITE_DATA, 0,
+			temp_data_addr, 1,
+			current_size, DMA_TRIG_DEBUG);
+		noerr_or_out(err);
 
-	err = flash_wait_flag_cleared(ctx, FLASH_WRITE);
-	noerr_or_out(err);
+		// DMA from temp address to flash
+		err = dma_config_channel(
+			ctx, &dma_config, 2,
+			temp_data_addr, 1,
+			FLASH_WRITE_DATA, 0,
+			current_size, DMA_TRIG_FLASH);
+		noerr_or_out(err);
+
+		// Start burst write DMA
+		err = dma_config_commit(ctx, &dma_config, temp_config_addr, sizeof(dma_config.configs));
+		noerr_or_out(err);
+
+		err = dma_arm(ctx, 1);
+		noerr_or_out(err);
+
+		err = burst_write(ctx, data, current_size);
+		noerr_or_out(err);
+
+		// Start Flash DMA
+		err = flash_setup(ctx, addr);
+		noerr_or_out(err);
+
+		err = flash_wait_flag_cleared(ctx, FLASH_BUSY);
+		noerr_or_out(err);
+
+		err = dma_arm(ctx, 2);
+		noerr_or_out(err);
+
+		err = flash_set_flag(ctx, FLASH_WRITE);
+		noerr_or_out(err);
+
+		err = flash_wait_flag_cleared(ctx, FLASH_WRITE);
+		noerr_or_out(err);
+
+		size -= current_size;
+	}
 
 out:
 	return err;

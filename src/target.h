@@ -9,6 +9,8 @@ enum {
 	MEM_CHIP_ID      = 0x624a,
 	MEM_CHIP_INFO    = 0x6276,
 	
+	DEBUG_WRITE_DATA = 0x6260,
+
 	FLASH_CONTROL    = 0x6270,
 	FLASH_ADDR_LOW   = 0x6271,
 	FLASH_ADDR_HIGH  = 0x6272,
@@ -38,13 +40,14 @@ enum {
 	DMA_TMODE_BLOCK   = 0x20,
 	DMA_TMODE_SINGLE  = 0x00,
 	DMA_TRIG_FLASH    = 18,
+	DMA_TRIG_DEBUG    = 31,
 
 	DMA_SRC_INC_M1    = 0xc0,
 	DMA_SRC_INC_2     = 0x80,
 	DMA_SRC_INC_1     = 0x40,
-	DMA_DEST_INC_M1   = 0x30,
-	DMA_DEST_INC_2    = 0x20,
-	DMA_DEST_INC_1    = 0x10,
+	DMA_DST_INC_M1    = 0x30,
+	DMA_DST_INC_2     = 0x20,
+	DMA_DST_INC_1     = 0x10,
 	DMA_IRQMASK_EN    = 0x08,
 	DMA_M8_7LSB       = 0x04,
 	DMA_PRIO_HIGH     = 0x02,
@@ -71,6 +74,8 @@ enum {
 	TARGET_STEP_INSTR  = 0x5c,
 	TARGET_GET_BM      = 0x67,
 	TARGET_GET_CHIP_ID = 0x68,
+
+	TARGET_BURST_HDR   = 0xee,
 	TARGET_BURST_WRITE = 0x80,
 };
 

@@ -1,6 +1,9 @@
 ## CC-Debugger Driver
 
-Work-in-progress support for CC2541 (SensorTag chip).
+Driver for Texas Instruments CC-Debugger.
+
+Support for:
+- CC2541 (SensorTag)
 
 Features:
 - Erase target flash

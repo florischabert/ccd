@@ -157,6 +157,8 @@ int main(int argc, char * const *argv)
 		printf("Verifying flash not implemented.\n");
 	}
 
+	printf("Done.\n");
+
 	err = ccd_leave_debug(ctx);
 	noerr_or_out(err);
 

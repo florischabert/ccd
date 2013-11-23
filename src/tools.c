@@ -27,7 +27,7 @@ void log_bytes(const uint8_t *data, int size)
 			 log_print("\n");
 		}
 	}
-	if (size > 0) {
+	if (size > 0 && size % 16 != 0) {
 		 log_print("\n");
 	}
 }

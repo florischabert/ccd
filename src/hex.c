@@ -82,6 +82,7 @@ err_t hex_parse(ccd_ctx_t *ctx, FILE *fp)
 	uint8_t bytecount = 0;
 	uint16_t address_low = 0;
 	uint16_t address_high = 0;
+	int block_size = 0;
 	enum {
 		state_getline,
 		state_colon,
@@ -95,7 +96,6 @@ err_t hex_parse(ccd_ctx_t *ctx, FILE *fp)
 		state_done,
 	} state;
 
-	memset(buffer, 0x42, 1 << 16);
 	state = state_getline;
 
 	while (state != state_done) {
@@ -221,10 +221,11 @@ err_t hex_parse(ccd_ctx_t *ctx, FILE *fp)
 		}
 	}
 
-	log_print("[HEX] Writing buffer of %dB to code memory at 0x%04x\n", address_max - address_min, address_min);
-	log_bytes(&buffer[address_min], address_max - address_min);
+	log_print("[HEX] Found %dB of code starting at 0x%04x\n", address_max - address_min, address_min);
 
-	err = ccd_write_code(ctx, address_min, buffer, address_max - address_min);
+	block_size = address_max - address_min;
+	block_size += (block_size % 4) ? 4 - block_size % 4 : 0;
+	err = ccd_write_code(ctx, address_min, buffer, block_size);
 	noerr_or_out(err);
 
 out:
