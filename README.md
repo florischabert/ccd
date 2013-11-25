@@ -10,3 +10,13 @@ Features:
 - Write HEX file to flash
 - Verify memory
 
+---
+
+Usage: ccd [options]
+Options:
+  -h, --help           	Print this help
+  -v, --verbose        	Verbose mode
+  -i, --info           	Print target info
+  -e, --erase          	Erase flash
+  -x, --hex <filename> 	Erase, Write HEX file to flash, Verify
+  -s, --slow           	Slow mode
