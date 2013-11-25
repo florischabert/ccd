@@ -537,26 +537,15 @@ out:
 uint16_t compute_crc16(const uint8_t *data, int size, uint16_t init)
 {
 	uint16_t crc16 = init;
-	uint16_t poly = 0x8005;
-    int bits_read = 0, bit_flag;
 
-	while (size > 0) {
-		bit_flag = crc16 >> 15;
-
-		crc16 <<= 1;
-		crc16 |= (*data >> bits_read) & 1;
-
-		bits_read++;
-		if (bits_read > 7) {
-			bits_read = 0;
-			data++;
-			size--;
+	for (int i = 0; i < size; i++) {
+		uint8_t byte = *data++;
+		for (int b = 7; b >= 0; b-- ) {
+			uint8_t in_sum = ((crc16 & 0x8000) >> 15) ^ ((byte >> b) & 1);
+			crc16 = (crc16 << 1) | in_sum;
+			crc16 = crc16 ^ (in_sum << 15);
+			crc16 = crc16 ^ (in_sum << 2);
 		}
-
-		if (bit_flag) {
-			crc16 ^= poly;
-		}
-
 	}
 
 	return crc16;
@@ -573,13 +562,11 @@ err_t target_verify_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, in
 
 	dma_config_init(ctx, &dma_config);
 
-	size = 1;
-
 	// DMA from flash to RNG
 	err = dma_config_channel(
 		ctx, &dma_config, 0,
 		XDATA_FLASH + addr, 1, RNG_DATA_HIGH, 0,
-		size, DMA_TRIG_FLASH, DMA_TMODE_BLOCK);
+		size, 0, DMA_TMODE_BLOCK);
 	noerr_or_out(err);
 
 	err = dma_config_commit(ctx, &dma_config, temp_config_addr);

@@ -22,7 +22,7 @@ static err_t parse_options(options_t *options, int argc, char * const *argv)
 	static struct option long_options[] =
 	{
 		{"help",    no_argument,       0, 'h'},
-		{"verbose", no_argument,       0, 'V'},
+		{"verbose", no_argument,       0, 'v'},
 		{"info",    no_argument,       0, 'i'},
 		{"erase",   no_argument,       0, 'e'},
 		{"hex",     required_argument, 0, 'x'},
