@@ -35,7 +35,6 @@ err_t ccd_erase(ccd_ctx_t *ctx);
 
 err_t ccd_read_xdata(ccd_ctx_t *ctx, uint16_t addr, void *data, int size);
 err_t ccd_write_xdata(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size);
-err_t ccd_read_code(ccd_ctx_t *ctx, uint16_t addr, void *data, int size);
 err_t ccd_write_code(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size);
 
 #endif

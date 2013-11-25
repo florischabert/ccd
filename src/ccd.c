@@ -210,19 +210,6 @@ out:
 	return err;
 }
 
-err_t ccd_read_code(ccd_ctx_t *ctx, uint16_t addr, void *data, int size)
-{
-	err_t err = err_failed;
-
-	log_print("[CCD] Read %dB at 0x%04x in code memory\n", size, addr);
-
-	err = target_read_flash(ctx, addr, data, size);
-	noerr_or_out(err);
-
-out:
-	return err;
-}
-
 err_t ccd_write_code(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
 {
 	err_t err = err_failed;
@@ -230,6 +217,9 @@ err_t ccd_write_code(ccd_ctx_t *ctx, uint16_t addr, const void *data, int size)
 	log_print("[CCD] Write %dB at 0x%04x in code memory\n", size, addr);
 
 	err = target_write_flash(ctx, addr, data, size);
+	noerr_or_out(err);
+
+	err = target_verify_flash(ctx, addr, data, size);
 	noerr_or_out(err);
 
 out:

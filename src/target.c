@@ -227,6 +227,44 @@ out:
 	return err;
 }
 
+static err_t flag_set(ccd_ctx_t *ctx, uint16_t address, uint8_t flag)
+{
+	err_t err;
+	uint8_t flash_ctrl;
+
+	log_print("[Target] Flash set flag 0x%02x\n", flag);
+
+	err = target_read_xdata(ctx, address, &flash_ctrl, sizeof(flash_ctrl));
+	noerr_or_out(err);
+
+	flash_ctrl |= flag;
+	err = target_write_xdata(ctx, address, &flash_ctrl, sizeof(flash_ctrl));
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+static err_t flag_wait_cleared(ccd_ctx_t *ctx, uint16_t address, uint8_t flag)
+{
+	err_t err;
+	uint8_t byte = 0;
+
+	log_print("[Target] Flash wait for flag 0x%02x cleared\n", flag);
+
+	do {
+		if (byte) {
+			usleep(200);
+		}
+
+		err = target_read_xdata(ctx, address, &byte, sizeof(byte));
+		noerr_or_out(err);
+	} while (byte & flag);
+
+out:
+	return err;
+}
+
 typedef struct {
 	int is_dma0;
 	uint8_t configs[4][8];
@@ -241,7 +279,7 @@ static void dma_config_init(ccd_ctx_t *ctx, dma_config_t *config)
 static err_t dma_config_channel(
 	ccd_ctx_t *ctx, dma_config_t *config, int channel,
 	uint16_t srcaddr, int incsrc, uint16_t dstaddr, int incdst,
-	int size, int dma_trigger)
+	int size, int dma_trigger, int dma_tmode)
 {
 	err_t err = err_failed;
 	(void)ctx;
@@ -265,7 +303,7 @@ static err_t dma_config_channel(
 	config->configs[channel][3] = dstaddr & 0xff;
 	config->configs[channel][4] = size >> 8;
 	config->configs[channel][5] = size & 0xff;
-	config->configs[channel][6] = DMA_TMODE_SINGLE | dma_trigger;
+	config->configs[channel][6] = dma_tmode | dma_trigger;
 	config->configs[channel][7] = DMA_PRIO_HIGH;
 	config->configs[channel][7] |= incsrc ? DMA_SRC_INC_1 : 0;
 	config->configs[channel][7] |= incdst ? DMA_DST_INC_1 : 0;
@@ -277,7 +315,7 @@ out:
 }
 
 static err_t dma_config_commit(
-	ccd_ctx_t *ctx, dma_config_t *config, uint16_t temp_addr, int size)
+	ccd_ctx_t *ctx, dma_config_t *config, uint16_t temp_addr)
 {
 	err_t err = err_failed;
 	uint8_t val;
@@ -288,7 +326,7 @@ static err_t dma_config_commit(
 		error_out("Can't commit before DMA config is done\n");
 	}
 
-	err = target_write_xdata(ctx, temp_addr, (uint8_t *)config->configs, size);
+	err = target_write_xdata(ctx, temp_addr, (uint8_t *)config->configs, sizeof(config->configs));
 	noerr_or_out(err);
 
 	val = temp_addr & 0xff;
@@ -318,6 +356,74 @@ out:
 	return err;
 }
 
+static err_t dma_request(ccd_ctx_t *ctx, int channel)
+{
+	err_t err;
+	uint8_t val;
+
+	log_print("[Target] Request DMA on channel %d\n", channel);
+
+	val = 1 << channel;
+	err = target_write_xdata(ctx, DMA_REQ, &val, sizeof(val));
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+static err_t dma_wait_completion(ccd_ctx_t *ctx, int channel)
+{
+	err_t err;
+
+	log_print("[Target] Wait for DMA completion on channel %d\n", channel);
+
+	err = flag_wait_cleared(ctx, DMA_IRQ, 1 << channel);
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+static err_t rng_seed(ccd_ctx_t *ctx, uint16_t seed)
+{
+	err_t err;
+	uint8_t val;
+
+	log_print("[Target] Set RNG seed to 0x%02x\n", seed);
+
+	val = seed >> 8;
+	err = target_write_xdata(ctx, RNG_DATA_LOW, &val, sizeof(val));
+	noerr_or_out(err);
+
+	val = seed & 0xff;
+	err = target_write_xdata(ctx, RNG_DATA_LOW, &val, sizeof(val));
+	noerr_or_out(err);
+
+out:
+	return err;
+}
+
+static err_t rng_get_crc16(ccd_ctx_t *ctx, uint16_t *crc16)
+{
+	err_t err;
+	uint8_t val;
+
+	log_print("[Target] Get RNG CRC value\n");
+
+	err = target_read_xdata(ctx, RNG_DATA_LOW, &val, sizeof(val));
+	noerr_or_out(err);
+
+	*crc16 = val;
+
+	err = target_read_xdata(ctx, RNG_DATA_HIGH, &val, sizeof(val));
+	noerr_or_out(err);
+
+	*crc16 |= val << 8;
+
+out:
+	return err;
+}
+
 static err_t flash_setup(ccd_ctx_t *ctx, uint16_t addr)
 {
 	err_t err;
@@ -332,42 +438,6 @@ static err_t flash_setup(ccd_ctx_t *ctx, uint16_t addr)
 	val = addr >> 8;
 	err = target_write_xdata(ctx, FLASH_ADDR_HIGH, &val, sizeof(val));
 	noerr_or_out(err);
-
-out:
-	return err;
-}
-
-static err_t flash_set_flag(ccd_ctx_t *ctx, int flag)
-{
-	err_t err;
-	uint8_t flash_ctrl;
-
-	log_print("[Target] Flash set flag 0x%02x\n", flag);
-
-	err = target_read_xdata(ctx, FLASH_CONTROL, &flash_ctrl, sizeof(flash_ctrl));
-	noerr_or_out(err);
-
-	flash_ctrl |= flag;
-	err = target_write_xdata(ctx, FLASH_CONTROL, &flash_ctrl, sizeof(flash_ctrl));
-	noerr_or_out(err);
-
-out:
-	return err;
-}
-
-static err_t flash_wait_flag_cleared(ccd_ctx_t *ctx, int flag)
-{
-	err_t err;
-	uint8_t flash_ctrl;
-
-	log_print("[Target] Flash wait for flag 0x%02x cleared\n", flag);
-
-	do {
-		usleep(200);
-
-		err = target_read_xdata(ctx, FLASH_CONTROL, &flash_ctrl, sizeof(flash_ctrl));
-		noerr_or_out(err);
-	} while (flash_ctrl & flag);
 
 out:
 	return err;
@@ -420,21 +490,19 @@ err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int
 		// DMA from usb burst write to temp address
 		err = dma_config_channel(
 			ctx, &dma_config, 1,
-			DEBUG_WRITE_DATA, 0,
-			temp_data_addr, 1,
-			current_size, DMA_TRIG_DEBUG);
+			DEBUG_WRITE_DATA, 0, temp_data_addr, 1,
+			current_size, DMA_TRIG_DEBUG, DMA_TMODE_SINGLE);
 		noerr_or_out(err);
 
 		// DMA from temp address to flash
 		err = dma_config_channel(
 			ctx, &dma_config, 2,
-			temp_data_addr, 1,
-			FLASH_WRITE_DATA, 0,
-			current_size, DMA_TRIG_FLASH);
+			temp_data_addr, 1, FLASH_WRITE_DATA, 0,
+			current_size, DMA_TRIG_FLASH, DMA_TMODE_SINGLE);
 		noerr_or_out(err);
 
 		// Start burst write DMA
-		err = dma_config_commit(ctx, &dma_config, temp_config_addr, sizeof(dma_config.configs));
+		err = dma_config_commit(ctx, &dma_config, temp_config_addr);
 		noerr_or_out(err);
 
 		err = dma_arm(ctx, 1);
@@ -447,16 +515,16 @@ err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int
 		err = flash_setup(ctx, addr);
 		noerr_or_out(err);
 
-		err = flash_wait_flag_cleared(ctx, FLASH_BUSY);
+		err = flag_wait_cleared(ctx, FLASH_CONTROL, FLASH_BUSY);
 		noerr_or_out(err);
 
 		err = dma_arm(ctx, 2);
 		noerr_or_out(err);
 
-		err = flash_set_flag(ctx, FLASH_WRITE);
+		err = flag_set(ctx, FLASH_CONTROL, FLASH_WRITE);
 		noerr_or_out(err);
 
-		err = flash_wait_flag_cleared(ctx, FLASH_WRITE);
+		err = flag_wait_cleared(ctx, FLASH_CONTROL, FLASH_WRITE);
 		noerr_or_out(err);
 
 		size -= current_size;
@@ -466,15 +534,79 @@ out:
 	return err;
 }
 
-err_t target_read_flash(ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size)
+uint16_t compute_crc16(const uint8_t *data, int size, uint16_t init)
+{
+	uint16_t crc16 = init;
+	uint16_t poly = 0x8005;
+    int bits_read = 0, bit_flag;
+
+	while (size > 0) {
+		bit_flag = crc16 >> 15;
+
+		crc16 <<= 1;
+		crc16 |= (*data >> bits_read) & 1;
+
+		bits_read++;
+		if (bits_read > 7) {
+			bits_read = 0;
+			data++;
+			size--;
+		}
+
+		if (bit_flag) {
+			crc16 ^= poly;
+		}
+
+	}
+
+	return crc16;
+}
+
+err_t target_verify_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size)
 {
 	err_t err = err_failed;
+	const uint16_t seed = 0xffff;
+	const uint16_t temp_config_addr = 0x0800;
+	static dma_config_t dma_config;
+	uint16_t crc16_target;
+	uint16_t crc16_host;
 
-	(void)ctx;
-	(void)addr;
-	(void)data;
-	(void)size;
-	printf("Read flash not implemented\n");
+	dma_config_init(ctx, &dma_config);
 
+	size = 1;
+
+	// DMA from flash to RNG
+	err = dma_config_channel(
+		ctx, &dma_config, 0,
+		XDATA_FLASH + addr, 1, RNG_DATA_HIGH, 0,
+		size, DMA_TRIG_FLASH, DMA_TMODE_BLOCK);
+	noerr_or_out(err);
+
+	err = dma_config_commit(ctx, &dma_config, temp_config_addr);
+	noerr_or_out(err);
+
+	err = rng_seed(ctx, seed);
+	noerr_or_out(err);
+
+	err = dma_arm(ctx, 0);
+	noerr_or_out(err);
+
+	err = dma_request(ctx, 0);
+	noerr_or_out(err);
+
+	err = dma_wait_completion(ctx, 4);
+	noerr_or_out(err);
+
+	err = rng_get_crc16(ctx, &crc16_target);
+	noerr_or_out(err);
+
+	crc16_host = compute_crc16(data, size, seed);
+
+	if (crc16_host != crc16_target) {
+		err = err_failed;
+		error_out("Flashing failed: checksum mismatch (0x%04x != 0x%04x)\n", crc16_host, crc16_target);
+	}
+
+out:
 	return err;
 }

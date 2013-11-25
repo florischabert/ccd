@@ -17,11 +17,18 @@ enum {
 	FLASH_WRITE_DATA = 0x6273,
 
 	// SFR
+	RNG_DATA_LOW     = 0x70bc,
+	RNG_DATA_HIGH    = 0x70bd,
+	MEMORY_CONTROL   = 0x70c7,
+	DMA_IRQ          = 0x70d1,
 	DMA14_ADDR_LOW   = 0x70d2,
 	DMA14_ADDR_HIGH  = 0x70d3,
 	DMA0_ADDR_LOW    = 0x70d4,
 	DMA0_ADDR_HIGH   = 0x70d5,
 	DMA_ARM          = 0x70d6,
+	DMA_REQ          = 0x70d7,
+
+	XDATA_FLASH      = 0x8000,
 };
 
 enum {
@@ -108,7 +115,7 @@ err_t target_command_finalize(void **cmd, int *size);
 
 err_t target_read_xdata(ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size);
 err_t target_write_xdata(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
-err_t target_read_flash(ccd_ctx_t *ctx, uint16_t addr, uint8_t *data, int size);
 err_t target_write_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
+err_t target_verify_flash(ccd_ctx_t *ctx, uint16_t addr, const uint8_t *data, int size);
 
 #endif
